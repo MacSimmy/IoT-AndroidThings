@@ -33,20 +33,38 @@ import java.io.IOException;
 /**
  * TemperatureActivity is an example that use the driver for the BMP280 temperature sensor.
  */
-public class TemperatureActivity extends Activity implements SensorEventListener {
+public class TemperatureActivity extends Activity {
     private static final String TAG = TemperatureActivity.class.getSimpleName();
 
-    private Bmx280SensorDriver mTemperatureSensorDriver;
+    private Bmx280SensorDriver mBmp280SensorDriver;
     private SensorManager mSensorManager;
+
+    private static final float BAROMETER_RANGE_LOW = 965.f;
+    private static final float BAROMETER_RANGE_HIGH = 1035.f;
+    private static final float BAROMETER_RANGE_SUNNY = 1010.f;
+    private static final float BAROMETER_RANGE_RAINY = 990.f;
+
+
+    private float mLastTemperature;
+    private float mLastPressure;
 
     private DynamicSensorCallback mDynamicSensorCallback = new DynamicSensorCallback() {
         @Override
         public void onDynamicSensorConnected(Sensor sensor) {
             if (sensor.getType() == Sensor.TYPE_AMBIENT_TEMPERATURE) {
-                Log.i(TAG, "Temperature sensor connected");
-                mSensorManager.registerListener(TemperatureActivity.this,
-                        sensor, SensorManager.SENSOR_DELAY_NORMAL);
+                // Our sensor is connected. Start receiving temperature data.
+                mSensorManager.registerListener(mTemperatureListener, sensor,
+                        SensorManager.SENSOR_DELAY_NORMAL);
+            } else if (sensor.getType() == Sensor.TYPE_PRESSURE) {
+                // Our sensor is connected. Start receiving pressure data.
+                mSensorManager.registerListener(mPressureListener, sensor,
+                        SensorManager.SENSOR_DELAY_NORMAL);
             }
+        }
+
+        @Override
+        public void onDynamicSensorDisconnected(Sensor sensor) {
+            super.onDynamicSensorDisconnected(sensor);
         }
     };
 
@@ -59,8 +77,10 @@ public class TemperatureActivity extends Activity implements SensorEventListener
         mSensorManager.registerDynamicSensorCallback(mDynamicSensorCallback);
 
         try {
-            mTemperatureSensorDriver = new Bmx280SensorDriver(BoardDefaults.getI2CPort());
-            mTemperatureSensorDriver.registerTemperatureSensor();
+            mBmp280SensorDriver = new Bmx280SensorDriver(BoardDefaults.getI2CPort());
+            mBmp280SensorDriver.registerTemperatureSensor();
+            mBmp280SensorDriver.registerPressureSensor();
+
         } catch (IOException e) {
             Log.e(TAG, "Error configuring sensor", e);
         }
@@ -70,27 +90,47 @@ public class TemperatureActivity extends Activity implements SensorEventListener
     protected void onDestroy() {
         super.onDestroy();
         Log.i(TAG, "Closing sensor");
-        if (mTemperatureSensorDriver != null) {
+        if (mBmp280SensorDriver != null) {
             mSensorManager.unregisterDynamicSensorCallback(mDynamicSensorCallback);
-            mSensorManager.unregisterListener(this);
-            mTemperatureSensorDriver.unregisterTemperatureSensor();
+            mSensorManager.unregisterListener(mTemperatureListener);
+            mSensorManager.unregisterListener(mPressureListener);
+            mBmp280SensorDriver.unregisterTemperatureSensor();
+            mBmp280SensorDriver.unregisterPressureSensor();
             try {
-                mTemperatureSensorDriver.close();
+                mBmp280SensorDriver.close();
             } catch (IOException e) {
                 Log.e(TAG, "Error closing sensor", e);
             } finally {
-                mTemperatureSensorDriver = null;
+                mBmp280SensorDriver = null;
             }
         }
     }
 
-    @Override
-    public void onSensorChanged(SensorEvent event) {
-        Log.i(TAG, "sensor changed: " + event.values[0]);
-    }
+    // Callback when SensorManager delivers temperature data.
+    private SensorEventListener mTemperatureListener = new SensorEventListener() {
+        @Override
+        public void onSensorChanged(SensorEvent event) {
+            mLastTemperature = event.values[0];
+            Log.d(TAG, "Temperature sensor changed: " + mLastTemperature);
+        }
 
-    @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy) {
-        Log.i(TAG, "sensor accuracy changed: " + accuracy);
-    }
+        @Override
+        public void onAccuracyChanged(Sensor sensor, int accuracy) {
+            Log.d(TAG, "Temperature sensor accuracy changed: " + accuracy);
+        }
+    };
+
+    // Callback when SensorManager delivers pressure data.
+    private SensorEventListener mPressureListener = new SensorEventListener() {
+        @Override
+        public void onSensorChanged(SensorEvent event) {
+            mLastPressure = event.values[0];
+            Log.d(TAG, "Pressure sensor changed: " + mLastPressure);
+        }
+
+        @Override
+        public void onAccuracyChanged(Sensor sensor, int accuracy) {
+            Log.d(TAG, "Pressure sensor accuracy changed: " + accuracy);
+        }
+    };
 }
